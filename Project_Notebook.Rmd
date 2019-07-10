@@ -1,0 +1,405 @@
+---
+title: "Machine Learning Final Project"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  html_notebook: default
+---
+
+## Import Data Set Into R
+
+```{r}
+library(plyr)
+library(mosaic)
+library(readr)
+library(caret)
+library(party)
+```
+
+```{r}
+diabetic_data <- read_csv("diabetic_data.csv")
+
+no_dup <- data.frame(diabetic_data)
+#no_dup[1:10,3:6]
+```
+## Data Clean Up
+
+We dont have admission date data, and some patients have multiple admissions in this dataset. We removed duplicate patient encounters, keeping only the first. This ensures that each patient encounter is independent.  We are then left with 70,000 encounters instead of 100,000.
+```{r}
+no_dup <- no_dup[order(no_dup$encounter_id),]
+no_dup <- no_dup[!duplicated(no_dup$patient_nbr), ]
+no_dup<-no_dup[!(no_dup$gender=="Unknown/Invalid"),]
+#write.csv(no_dup, "no_duplicate.csv")
+```
+
+#### Missing Values
+```{r}
+no_dup$weight <- factor(no_dup$weight)
+table(no_dup$weight)
+```
+
+
+According to the table, 96% of the weight data is missing, so we will remove that attribute from our model. 
+
+```{r}
+no_dup$weight <- NULL
+#no_dup[1:10,3:6]
+```
+payer_code and medical_specialty are missing over 50% of their data, so we remove those from our model as well. Encounter Id and patient number are meaningless for purposes of this project, so we can get rid of those as well. examide, glimepriride-pioglitazone and citoglipton have the same output "No", for every instance, so there's no purpose in keeping those either.  After removing problem categories, remove all other rows with null values. 
+
+```{r}
+no_dup$payer_code <- NULL
+no_dup$medical_specialty <- NULL
+no_dup$examide <-NULL
+no_dup$citoglipton<- NULL
+no_dup$encounter_id <- NULL
+no_dup$patient_nbr<- NULL
+no_dup$`glimepiride-pioglitazone` <- NULL
+no_dup$admission_type_id <- NULL
+no_dup$discharge_disposition_id <- NULL
+no_dup$admission_source_id<- NULL
+no_dup$num_lab_procedures <- NULL
+no_dup$num_medications <- NULL
+no_dup$number_outpatient <- NULL
+no_dup$number_emergency <- NULL
+no_dup$chlorpropamide <- NULL
+no_dup$acetohexamide <- NULL
+no_dup$tolbutamide <- NULL
+no_dup$miglitol <- NULL
+no_dup$troglitazone <- NULL
+no_dup$glyburide.metformin <-NULL
+no_dup$glipizide.metformin<-NULL
+no_dup$glimepiride.pioglitazone <- NULL
+no_dup$metformin.rosiglitazone<-NULL
+no_dup$metformin.pioglitazone <-NULL
+no_dup$number_inpatient <- NULL 
+no_dup$number_diagnoses <- NULL
+no_dup$nateglinide <-NULL
+
+
+```
+
+```{r}
+no_dup <- no_dup[complete.cases(no_dup), ]
+```
+
+
+#### Factors
+We want to relabel character values as factor attributes, and also relabel readmittance to be a 2 level factor variable, with No corresponding to no readmittance in 30 days, and Yes corresponding to a readmittance within 30 days. 
+
+This next code loops through the variables that need to become factors instead of integers or chars. 
+```{r}
+d_header <- colnames(no_dup)
+d_header <- d_header[c(1:6, 10:22)]
+no_dup$diag_1 <- as.numeric(no_dup$diag_1)
+```
+Need to collapse diagnoses into smaller factor levels. 
+```{r}
+tables <- lapply(no_dup[d_header], table)
+```
+
+```{r DIAG1}
+v1 <- as.numeric(no_dup$diag_1)
+v2 <- vector()
+  for ( x in 1:length(v1)){
+    if(!is.na(v1[x])) {
+      if((v1[x] >= 390 & v1[x] <= 459) | v1[x] == 785){
+        v2[x] <- "Circulatory"
+      }
+      else if((v1[x] >= 450 & v1[x] <= 519) | v1[x] == 786){
+        v2[x] <- "Respiratory"
+      }
+      else if((v1[x] >= 520 & v1[x] <= 579) | v1[x] == 787){
+        v2[x] <- "Digestive"
+      }
+      else if((v1[x] >= 250 & v1[x] < 251)){
+        v2[x] <- "Diabetes"
+      }
+      else if((v1[x] >= 800 & v1[x] <= 999)){
+        v2[x] <- "Injury"
+      }
+      else if((v1[x] >= 710 & v1[x] <= 739)){
+        v2[x] <- "Genitourinary"
+      }
+      else if((v1[x] >= 140 & v1[x] <= 239)){
+        v2[x] <- "Neoplasms"
+      }
+      else 
+        v2[x] <- "Other"
+    }
+    else v2[x] <- "Missing"
+    
+  }
+no_dup$diag_1 <- as.factor(v2)
+```
+
+
+
+```{r DIAG2}
+v1 <- as.numeric(no_dup$diag_2)
+v2 <- vector()
+  for ( x in 1:length(v1)){
+    if(!is.na(v1[x])) {
+      if((v1[x] >= 390 & v1[x] <= 459) | v1[x] == 785){
+        v2[x] <- "Circulatory"
+      }
+      else if((v1[x] >= 450 & v1[x] <= 519) | v1[x] == 786){
+        v2[x] <- "Respiratory"
+      }
+      else if((v1[x] >= 520 & v1[x] <= 579) | v1[x] == 787){
+        v2[x] <- "Digestive"
+      }
+      else if((v1[x] >= 250 & v1[x] < 251)){
+        v2[x] <- "Diabetes"
+      }
+      else if((v1[x] >= 800 & v1[x] <= 999)){
+        v2[x] <- "Injury"
+      }
+      else if((v1[x] >= 710 & v1[x] <= 739)){
+        v2[x] <- "Genitourinary"
+      }
+      else if((v1[x] >= 140 & v1[x] <= 239)){
+        v2[x] <- "Neoplasms"
+      }
+      else 
+        v2[x] <- "Other"
+    }
+    else v2[x] <- "Missing"
+    
+  }
+no_dup$diag_2 <- as.factor(v2)
+```
+
+```{r DIAG3}
+#diagnose <- function(v1){
+v1 <- as.numeric(no_dup$diag_3)
+v2 <- vector()
+  for ( x in 1:length(v1)){
+    if(!is.na(v1[x])) {
+      if((v1[x] >= 390 & v1[x] <= 459) | v1[x] == 785){
+        v2[x] <- "Circulatory"
+      }
+      else if((v1[x] >= 450 & v1[x] <= 519) | v1[x] == 786){
+        v2[x] <- "Respiratory"
+      }
+      else if((v1[x] >= 520 & v1[x] <= 579) | v1[x] == 787){
+        v2[x] <- "Digestive"
+      }
+      else if((v1[x] >= 250 & v1[x] < 251)){
+        v2[x] <- "Diabetes"
+      }
+      else if((v1[x] >= 800 & v1[x] <= 999)){
+        v2[x] <- "Injury"
+      }
+      else if((v1[x] >= 710 & v1[x] <= 739)){
+        v2[x] <- "Genitourinary"
+      }
+      else if((v1[x] >= 140 & v1[x] <= 239)){
+        v2[x] <- "Neoplasms"
+      }
+      else 
+        v2[x] <- "Other"
+    }
+    else v2[x] <- "Missing"
+    
+}
+no_dup$diag_3 <- as.factor(v2)
+#}
+```
+
+
+
+
+Change other variables into factors
+```{r}
+
+no_dup[d_header] <- lapply(no_dup[d_header], factor)
+
+
+
+
+```
+
+
+#### Collapsing Levels
+
+Here we change readmittance variable. 
+
+```{r}
+no_dup$readmitted <- factor(no_dup$readmitted)
+levels(no_dup$readmitted) <- list( No=c(">30", "NO"), Yes=c("<30"))
+#no_dup[1:20,40]
+#no_dup$readmitted <- as.numeric(no_dup$readmitted)
+# no= 1, yes = 2
+
+```
+## Set Aside Test and Train Data
+
+```{r}
+# Random sampling
+samplesize = 0.60 * nrow(no_dup)
+set.seed(80)
+index = sample( seq_len ( nrow ( no_dup ) ), size = samplesize )
+
+# Create training and test set
+datatrain = no_dup[ index, ]
+datatest = no_dup[ -index, ]
+```
+
+
+
+
+
+## First Model
+#### Regression
+
+
+Look at the distribution of attributes, and percent of readmission within attribute groups
+```{r}
+count(no_dup, diag_1, readmitted)
+count(no_dup, diag_1)
+readmit <- table(datatest$readmitted)
+prop.table(readmit,)*100
+diag1 <- table(no_dup$diag_1, no_dup$readmitted)
+prop.table(diag1,1)*100
+```
+Call linear regression on Diagnosis only.
+
+```{r}
+contrasts(no_dup$readmitted)
+no_dup.fit = glm(readmitted ~ diag_1, data=datatrain, family=binomial)
+#summary(no_dup.fit)
+
+```
+Test predictions with the simple model
+```{r}
+trainprob1 = predict(no_dup.fit, datatest, type="response")
+testprob1 = predict(no_dup.fit, datatest, type="response")
+predtrain1 = rep("No", dim(datatrain)[1])
+predtest1 = rep("No", dim(datatest)[1])
+predtrain1[trainprob1 > .5] = "Yes"
+predtest1[testprob1 > .5] = "Yes"
+
+table(predtrain1, datatrain$readmitted)
+table(predtest1, datatest$readmitted)
+"Training Accuracy"
+mean(predtrain1 == datatrain$readmitted)
+"Testing Accuracy"
+mean(predtest1 == datatest$readmitted)
+
+```
+So we're getting 91% accuracy, BUT that's not from any predictive power of our model, its just predicting that no patients will be readmitted. Let's try to add more variables to our model. 
+
+
+Call linear regression on Diagnosis and A1C result only.
+
+```{r}
+no_dup2.fit = glm(readmitted ~ diag_1 + A1Cresult, data=datatrain, family=binomial)
+#summary(no_dup2.fit)
+
+```
+Test predictions with the simple model
+```{r}
+trainprob2 = predict(no_dup2.fit, datatest, type="response")
+testprob2 = predict(no_dup2.fit, datatest, type="response")
+predtrain2 = rep("No", dim(datatrain)[1])
+predtest2 = rep("No", dim(datatest)[1])
+predtrain2[trainprob2 > .5] = "Yes"
+predtest2[testprob2 > .5] = "Yes"
+
+table(predtrain2, datatrain$readmitted)
+table(predtest2, datatest$readmitted)
+"Training Accuracy"
+mean(predtrain2 == datatrain$readmitted)
+"Testing Accuracy"
+mean(predtest2 == datatest$readmitted)
+
+```
+
+Still not predicting anything useful. Use more terms. 
+
+Use all remaining attributes
+```{r}
+no_dup3.fit = glm(readmitted ~., data=datatrain, family=binomial)
+#summary(no_dup3.fit)
+
+```
+Test predictions with the simple model
+```{r}
+trainprob3 = predict(no_dup3.fit, datatest, type="response")
+testprob3 = predict(no_dup3.fit, datatest, type="response")
+predtrain3 = rep("No", dim(datatrain)[1])
+predtest3 = rep("No", dim(datatest)[1])
+predtrain3[trainprob3 > .5] = "Yes"
+predtest3[testprob3 > .5] = "Yes"
+
+table(predtrain3, datatrain$readmitted)
+table(predtest3, datatest$readmitted)
+"Training Accuracy"
+mean(predtrain3 == datatrain$readmitted)
+"Testing Accuracy"
+mean(predtest3 == datatest$readmitted)
+```
+I think the data is too unbalanced, and the best accuracy is still by predicting that no patients will be readmitted. 
+
+## Check for balanced data
+ After balancing the data we can run the models. 
+
+```{r}
+balanced <- downSample(datatrain[1:22], datatrain$readmitted, list = FALSE, yname = "readmitted")
+balanceup <- upSample(datatrain[1:22], datatrain$readmitted, list = FALSE, yname = "readmitted")
+
+```
+
+```{r}
+
+table(balanced$readmitted)
+table(balanceup$readmitted)
+
+```
+
+
+
+Use all predictors
+```{r}
+balanced.fit = glm(readmitted ~., data=balanced, family=binomial)
+balanceup.fit =  glm(readmitted ~., data=balanceup, family=binomial)                        
+#summary(balanced.fit)
+#summary(balanceup.fit)
+
+
+```
+Test predictions with the simple model
+```{r}
+trainprobdown = predict(balanced.fit, datatest, type="response")
+testprobdown = predict(balanced.fit, datatest, type="response")
+predtraindown = rep("No", dim(datatrain)[1])
+predtestdown = rep("No", dim(datatest)[1])
+predtraindown[trainprobdown > .5] = "Yes"
+predtestdown[testprobdown > .5] = "Yes"
+
+table(predtraindown, datatrain$readmitted)
+table(predtestdown, datatest$readmitted)
+"Training Accuracy"
+mean(predtraindown == datatrain$readmitted)
+"Testing Accuracy"
+mean(predtestdown == datatest$readmitted)
+```
+```{r}
+trainprobup = predict(balanceup.fit, datatest, type="response")
+testprobup = predict(balanceup.fit, datatest, type="response")
+predtrainup = rep("No", dim(datatrain)[1])
+predtestup = rep("No", dim(datatest)[1])
+predtrainup[trainprobup > .5] = "Yes"
+predtestup[testprobup > .5] = "Yes"
+
+table(predtrainup, datatrain$readmitted)
+table(predtestup, datatest$readmitted)
+"Training Accuracy"
+mean(predtrainup == datatrain$readmitted)
+"Testing Accuracy"
+mean(predtestup == datatest$readmitted)
+
+```
+
